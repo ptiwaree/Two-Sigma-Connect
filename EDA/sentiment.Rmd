@@ -1,0 +1,135 @@
+---
+title: "Feature engineering 1. Sentiment analysis of descriptions"
+author: "Roberto Ruiz"
+date: "9 de febrero de 2017"
+output: html_document
+---
+
+
+
+<h4>In this notebook i will apply sentiment analysis classification to the description column. Finally I will check if there is some statistical difference if we use this new created variables. 
+
+&nbsp;&nbsp;
+<h4>We call the required libraries and the train data set:
+&nbsp;&nbsp;
+
+```{r}
+
+packages <- c("jsonlite", "dplyr", "purrr")
+
+purrr::walk(packages, library, character.only = TRUE, warn.conflicts = FALSE)
+
+
+data <- fromJSON("../input/train.json")
+
+vars <- setdiff(names(data), c("photos", "features"))
+train_df <- map_at(data, vars, unlist) %>% tibble::as_tibble(.)
+
+train_df$id<-seq(1:length(train_df$building_id)) #numerical ids!
+
+```
+
+&nbsp;&nbsp;
+<h4>Secondly we apply sentiment analysis to the description column and we get a new data frame:
+&nbsp;&nbsp;
+
+```{r}
+
+library(syuzhet)
+library(DT)
+sentiment <- get_nrc_sentiment(train_df$description)
+datatable(head(sentiment))
+
+```
+
+
+<style>
+  .col2 {
+    columns: 2 200px;         /* number of columns and width in pixels*/
+    -webkit-columns: 2 200px; /* chrome, safari */
+    -moz-columns: 2 200px;    /* firefox */
+  }
+  .col3 {
+    columns: 3 100px;
+    -webkit-columns: 3 100px;
+    -moz-columns: 3 100px;
+  }
+</style>
+
+<div class="col2">
+&nbsp;&nbsp;
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(ggplot2)
+data<-as.data.frame(colSums(sentiment))
+
+data$sentiment<-rownames(data)
+
+colnames(data)<-c("value", "sentiment")
+
+library(Hmisc) #Capitalize first letter of sentiment names
+data$Sentiment<-capitalize(data$sentiment)
+data<-data[-11,]
+
+
+library(ggplot2) #Pie of sentiments
+library(scales)
+
+#Create a theme
+blank_theme <- theme_minimal()+
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    panel.border = element_blank(),
+    panel.grid=element_blank(),
+    axis.ticks = element_blank(),
+    plot.title=element_text(size=14, face="bold")
+  )
+
+
+#Pies:
+
+
+bp<- ggplot(data[1:8,], aes(x="", y=value, fill=Sentiment)) +  
+  blank_theme +geom_bar(width = 1, stat = "identity")+coord_polar("y", start=0)+scale_fill_brewer(palette="Dark2")+
+  theme(axis.text.x=element_blank())
+
+bp2<-ggplot(data[9:10,], aes(x="", y=value, fill=Sentiment)) +  
+  blank_theme +geom_bar(width = 1, stat = "identity")+coord_polar("y", start=0)+scale_fill_brewer(palette="Dark2")+
+  theme(axis.text.x=element_blank())
+
+bp
+bp2
+```
+</div>
+
+&nbsp;
+
+<h4>At this point we can check if the new variables can have some important influence in our machine learning model. For that we can run a couple of linear regressions and compare them:
+&nbsp;
+
+```{r, echo=FALSE}
+train_df$interest<-ifelse(train_df$interest_level=="low",0, ifelse(train_df$interest_level=="medium",1,0))
+
+```
+
+```{r}
+#mod 1 without sentiments
+
+mod1<-lm(interest~bedrooms+price+bathrooms, data=train_df)
+summary(mod1)
+
+sentiment$id<-seq(1:nrow(sentiment))
+sent_df<-merge(train_df,sentiment, by.x="id", by.y="id", all.x=T, all.y=T)
+
+#mod2 with sentiments
+mod2<-lm(interest~bedrooms+price+bathrooms+positive+negative, data=sent_df)
+summary(mod2)
+```
+&nbsp;&nbsp;
+
+
+<h4>As we can see, all the variables have a high significance level. Using only two of the new created variables (positive and negative) increment the r squared in some points. So, we can try to use sentiment classification in the construction of our machine learning model. 
+
+If you find this noteboook interesting, give me an up!
+
+&nbsp;&nbsp;
